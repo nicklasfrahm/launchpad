@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/launchpad/pkg/utils"
 )
 
 // New creates a new instance of the Launchpad module.
@@ -34,18 +36,43 @@ type Launchpad struct {
 	Source *Directory
 }
 
-// Returns the version that has been detected in the provided source code.
-func (m *Launchpad) SourceVersion(ctx context.Context) string {
-	stdout, err := dag.Container().
+// SourceMetadata returns metadata about the source code, such as the version and commit hash.
+type SourceMetadata struct {
+	// Version is the version of the source code.
+	Version string `json:"version"`
+	// Owner is the organization that owns the source code.
+	Owner string `json:"owner"`
+	// Repo is the name of the repository.
+	Repo string `json:"repo"`
+}
+
+// Returns metadata about the source code, such as the version and commit hash.
+func (m *Launchpad) SourceMetadata(ctx context.Context) *SourceMetadata {
+	metadataContainer := dag.Container().
 		From("cgr.dev/chainguard/go").
 		WithMountedDirectory("/src", m.Source).
 		WithWorkdir("/src").
-		WithEntrypoint([]string{"sh", "-c"}).
+		WithEntrypoint([]string{"sh", "-c"})
+
+	version, err := metadataContainer.
 		WithExec([]string{"git fetch && git describe --tags --always --exclude main"}).
 		Stdout(ctx)
 	if err != nil {
-		return err.Error()
+		return nil
 	}
 
-	return stdout
+	remoteUrl, err := metadataContainer.
+		WithExec([]string{"git remote get-url origin"}).
+		Stdout(ctx)
+	if err != nil {
+		return nil
+	}
+
+	owner, repo := utils.ParseGitRemote(remoteUrl)
+
+	return &SourceMetadata{
+		Version: version,
+		Owner:   owner,
+		Repo:    repo,
+	}
 }
