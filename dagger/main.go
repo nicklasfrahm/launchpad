@@ -18,19 +18,34 @@ import (
 	"context"
 )
 
-type Launchpad struct{}
-
-// Returns a container that echoes whatever string argument is provided
-func (m *Launchpad) ContainerEcho(stringArg string) *Container {
-	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
+// New creates a new instance of the Launchpad module.
+func New(
+	// +required
+	source *Directory,
+) *Launchpad {
+	return &Launchpad{
+		Source: source,
+	}
 }
 
-// Returns lines that match a pattern in the files of the provided Directory
-func (m *Launchpad) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
-	return dag.Container().
-		From("alpine:latest").
-		WithMountedDirectory("/mnt", directoryArg).
-		WithWorkdir("/mnt").
-		WithExec([]string{"grep", "-R", pattern, "."}).
+// Launchpad is the entrypoint for the entire pipeline.
+type Launchpad struct {
+	// Source contains the source code to be processed.
+	Source *Directory
+}
+
+// Returns the version that has been detected in the provided source code.
+func (m *Launchpad) SourceVersion(ctx context.Context) string {
+	stdout, err := dag.Container().
+		From("cgr.dev/chainguard/go").
+		WithMountedDirectory("/src", m.Source).
+		WithWorkdir("/src").
+		WithEntrypoint([]string{"sh", "-c"}).
+		WithExec([]string{"git fetch && git describe --tags --always --exclude main"}).
 		Stdout(ctx)
+	if err != nil {
+		return err.Error()
+	}
+
+	return stdout
 }
