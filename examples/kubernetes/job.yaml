@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-nicklasfrahm-launchpad
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: build-nicklasfrahm-launchpad
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: dagger-conn
+          hostPath:
+            path: /var/run/dagger
+        - name: gomod-cache
+          persistentVolumeClaim:
+            claimName: gomod-cache
+      # Why are you like this alpine?
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 1.1.1.1
+          - 1.0.0.1
+      containers:
+        - name: build
+          image: alpine
+          command: [ "sh", "-c" ]
+          args:
+            - |
+              set -euxo pipefail
+              apk add curl git
+              curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+              $HOME/.local/bin/dagger --debug -m github.com/nicklasfrahm/launchpad call --source https://github.com/nicklasfrahm/launchpad source-metadata version
+          workingDir: /work
+          env:
+            - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+              value: "unix:///var/run/dagger/buildkitd.sock"
+          envFrom:
+            - secretRef:
+                name: dagger-cloud-token
+          volumeMounts:
+            - name: dagger-conn
+              mountPath: /var/run/dagger
+            - name: gomod-cache
+              mountPath: /go/pkg/mod
